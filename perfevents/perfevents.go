@@ -30,6 +30,8 @@ import (
 	"strings"
 	"time"
 
+	log "github.com/Sirupsen/logrus"
+
 	"github.com/intelsdi-x/snap/control/plugin"
 	"github.com/intelsdi-x/snap/control/plugin/cpolicy"
 	"github.com/intelsdi-x/snap/core"
@@ -188,13 +190,25 @@ func (p *Perfevents) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricTyp
 func (p *Perfevents) GetMetricTypes(_ plugin.ConfigType) ([]plugin.MetricType, error) {
 	err := p.Init()
 	if err != nil {
+		log.WithFields(log.Fields{
+			"block":  "GetMetricType",
+			"err":  err,
+		}).Error("Cannot initialize the plugin")
+
 		return nil, err
 	}
 	cgroups, err := list_cgroups()
 	if err != nil {
+		log.WithFields(log.Fields{
+			"block":  "GetMetricType",
+			"err":  err,
+		}).Error("Cannot retrieve the list of cgroups")
 		return nil, err
 	}
 	if len(cgroups) == 0 {
+		log.WithFields(log.Fields{
+			"block":  "GetMetricType",
+		}).Info("There is no available cgroups")
 		return nil, nil
 	}
 
@@ -213,6 +227,10 @@ func NewPerfeventsCollector() *Perfevents {
 }
 
 func initialize() error {
+	log.WithFields(log.Fields{
+			"block":  "initialize",
+	}).Info("Start initialization")
+
 	file, err := os.Open("/proc/sys/kernel/perf_event_paranoid")
 	if err != nil {
 		if os.IsExist(err) {
@@ -235,6 +253,9 @@ func initialize() error {
 		fmt.Fprintf(os.Stderr, "Per event paranoia level is %v (see `/proc/sys/kernel.perf_event_paranoid`). There is no permission to collect some stats. List of perf metrics can be limited", paranoid)
 	}
 
+	log.WithFields(log.Fields{
+			"block":  "initialize",
+	}).Info("Finish initialization without error")
 	return nil
 }
 
@@ -259,6 +280,14 @@ func get_supported_metrics(source string, cgroups []string, events []string) []p
 			mts = append(mts, plugin.MetricType{Namespace_: core.NewNamespace(ns_vendor, ns_class, ns_type, source, e, c)})
 		}
 	}
+
+	log.WithFields(log.Fields{
+			"block":  "get_supported_metrics",
+			"source":  source,
+			"cgroups_num":  len(cgroups),
+			"events_num":  len(events),
+			"mts_num":  len(mts),
+	}).Info("Getting perfevents metrics")
 	return mts
 }
 func flatten_cg_name(cg []string) []string {
@@ -272,9 +301,20 @@ func flatten_cg_name(cg []string) []string {
 func list_cgroups() ([]string, error) {
 	cgroups := []string{}
 	base_path := "/sys/fs/cgroup/perf_event/"
+	log.WithFields(log.Fields{
+			"block":  "list_cgroups",
+			"base_path":  base_path,
+	}).Info("Start listing available cgroups")
+
 	err := filepath.Walk(base_path, func(path string, info os.FileInfo, _ error) error {
 		if info.IsDir() {
 			cgroup_name := strings.TrimPrefix(path, base_path)
+			log.WithFields(log.Fields{
+				"block":  "list_cgroups",
+				"cgroup_name":  cgroup_name,
+				"base_path":  base_path,
+				"path":  path,
+			}).Info("Cgroup has been found!")
 			if len(cgroup_name) > 0 {
 				cgroups = append(cgroups, removeNotAllowChars(cgroup_name))
 			}
@@ -282,17 +322,36 @@ func list_cgroups() ([]string, error) {
 		return nil
 	})
 	if err != nil {
+		log.WithFields(log.Fields{
+			"block":  "list_cgroups",
+			"dir":  base_path,
+			"err": err,
+		}).Error("Failed to walk through the filepath")
 		return nil, err
 	}
+
+	log.WithFields(log.Fields{
+			"block":  "list_cgroups",
+			"dir":  base_path,
+			"cgroups_num": len(cgroups),
+	}).Info("Cgroups have been found")
+
 	return cgroups, nil
 }
 
 func removeNotAllowChars(str string) string {
+	//for debugging
+	input := str
 	notAllowedChars := []string{"(", ")", "[", "]", "{", "}", " ", ".", ",", ";", "?", "!"}
 
 	for _, chr := range notAllowedChars {
 		str = strings.Replace(str, chr, "_", -1)
 	}
+	log.WithFields(log.Fields{
+				"block":  "removeNotAllowChars",
+				"str_input":  input,
+				"str_output":  str,
+	}).Info("Removing not allowed characters")
 	return str
 }
 func validateNamespace(namespace []string) error {
